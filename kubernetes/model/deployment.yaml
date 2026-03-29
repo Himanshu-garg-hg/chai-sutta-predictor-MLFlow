@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chai-sutta-modal-deployment
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: chai-sutta-modal
+  template:
+    metadata:
+      name: chai-sutta-modal-pod
+      labels:
+        app: chai-sutta-modal
+    spec:
+      containers:
+      - name: chai-sutta-modal-container
+        image: modalacr.azurecr.io/chai-sutta-predictor-image:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 5000

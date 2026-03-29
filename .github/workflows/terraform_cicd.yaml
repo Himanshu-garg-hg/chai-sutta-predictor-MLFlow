@@ -1,0 +1,53 @@
+name: Terraform Infrastructure
+
+run-name: Terraform CI/CD by ${{ github.actor }}-${{ github.ref }}
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  id-token: write
+jobs:
+  terraform:
+    name: terraform infrastructure
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v1
+
+      - name: az login using federated credentials
+        uses: azure/login@v1
+        with:
+          client-id: "6863db71-fcbf-4466-8046-997de5b919c3"
+          tenant-id: "9fc5e873-a267-48bf-a6dd-9c332cf29837"
+          subscription-id: "a5e53954-5571-4fa4-9dd5-bfc7eda513a4"
+      
+
+      - name: Terraform Init
+        run: terraform  init 
+        working-directory: ./terraform-k8/root_module
+
+      - name: Terraform fmt
+        run: terraform fmt --recursive 
+        working-directory: ./terraform-k8/root_module 
+
+      - name: Terraform validate
+        run: terraform validate
+        working-directory: ./terraform-k8/root_module
+
+      - name: Terraform Plan
+        run: terraform plan 
+        working-directory: ./terraform-k8/root_module
+
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: terraform apply -auto-approve 
+        working-directory: ./terraform-k8/root_module

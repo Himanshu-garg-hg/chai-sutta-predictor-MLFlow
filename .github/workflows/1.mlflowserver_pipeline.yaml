@@ -1,0 +1,83 @@
+name: 1.MLflow Server Deployment
+
+run-name: MLflow Server Deployment by ${{ github.actor }}
+
+on:
+  push:
+    paths:
+      - chai-sutta-modal-mlflow/mlflow-server/**
+
+permissions:
+  id-token: write
+
+jobs:
+
+  mlflow_server_deploy:
+    name: mlflow server deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: az login using federated credentials
+        uses: azure/login@v1
+        with:
+          client-id: "6863db71-fcbf-4466-8046-997de5b919c3"
+          tenant-id: "9fc5e873-a267-48bf-a6dd-9c332cf29837"
+          subscription-id: "a5e53954-5571-4fa4-9dd5-bfc7eda513a4"
+
+      - name: Install Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      
+      - name: Login to ACR
+        run: |
+            az acr login --name modalacr
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v3
+        with:
+          context: ./chai-sutta-modal-mlflow/mlflow-server
+          push: true
+          tags: |
+            modalacr.azurecr.io/mlflow-server:latest
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v1
+        with:
+          version: 'latest'
+
+      - name: Get AKS credentials
+        run: az aks get-credentials --resource-group k8_modal_rg --name k8_modal_aks
+
+      - name: create secret to store storage account key
+        run: |
+          STORAGE_KEY=$(az storage account keys list --resource-group k8_modal_rg --account-name modalstorageacc --query "[0].value" -o tsv)
+          echo "::add-mask::$STORAGE_KEY"
+          kubectl create secret generic storage-account-secret --from-literal=STORAGE_KEY=$STORAGE_KEY
+
+      - name: Deploy to AKS using kubectl
+        run: |
+          kubectl apply -f kubernetes/mlflowserver/deployment.yaml
+          kubectl apply -f kubernetes/mlflowserver/service.yaml
+          kubectl rollout restart deployment mlflow-server-deployment
+
+      - name: Get MLflow IP
+        id: get_ip
+        run: |
+          for i in {1..60}; do
+            IP=$(kubectl get svc mlflow-server-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+            if [ -n "$IP" ]; then
+              echo "MLFLOW_SERVER_IP=$IP" >> $GITHUB_ENV
+              echo "MLFLOW_SERVER_IP=$IP"
+              exit 0
+            fi
+            echo "waiting for MLflow IP..."
+            sleep 10
+          done
+          echo "MLflow IP not found" >&2
+          exit 1
+
+      - name: Check MLflow health
+        run: |
+          curl --fail http://${{ env.MLFLOW_SERVER_IP }}:5000 || exit 1
+          echo "Using MLflow at http://${{ env.MLFLOW_SERVER_IP }}:5000"

@@ -1,0 +1,107 @@
+name: 3.Chai-sutta-predictor-deployment
+run-name: chai-sutta-predictor by ${{ github.actor }} with model version - ${{ github.event.inputs.model_version }}
+on:
+  workflow_dispatch:
+    inputs:
+      model_version:
+        description: 'Model version to deploy'
+        required: true
+
+permissions:
+  id-token: write
+
+jobs:
+  modal_image_build:
+    name: modal image build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+    
+      - name: Install Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: az login using federated credentials
+        uses: azure/login@v1
+        with:
+          client-id: "6863db71-fcbf-4466-8046-997de5b919c3"
+          tenant-id: "9fc5e873-a267-48bf-a6dd-9c332cf29837"
+          subscription-id: "a5e53954-5571-4fa4-9dd5-bfc7eda513a4"
+
+      - name: copy model files from storage account
+        run: |
+          mkdir -p ./chai-sutta-modal-mlflow/models
+          mkdir -p /tmp/model-download
+          az storage blob download-batch \
+            -d /tmp/model-download \
+            --account-name modalstorageacc \
+            -s chai-sutta-container \
+            --pattern "models/${{ github.event.inputs.model_version }}/*" \
+            --auth-mode login
+          
+          mv /tmp/model-download/models/${{ github.event.inputs.model_version }}/* \
+            ./chai-sutta-modal-mlflow/models/
+
+      - run: ls -R ./chai-sutta-modal-mlflow/
+
+
+      
+      - name: Login to ACR
+        run: |
+            az acr login --name modalacr
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v3
+        with:
+          context: ./chai-sutta-modal-mlflow
+          push: true
+          build-args: MODEL_VERSION=${{ github.event.inputs.model_version }}
+          tags: |
+            modalacr.azurecr.io/chai-sutta-predictor-image:${{ github.event.inputs.model_version }}
+            modalacr.azurecr.io/chai-sutta-predictor-image:latest
+
+  modal_deployment_kubernetes:
+    name: modal deployment on kubernetes
+    runs-on: ubuntu-latest
+    needs: modal_image_build
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: az login using federated credentials
+        uses: azure/login@v1
+        with:
+          client-id: "6863db71-fcbf-4466-8046-997de5b919c3"
+          tenant-id: "9fc5e873-a267-48bf-a6dd-9c332cf29837"
+          subscription-id: "a5e53954-5571-4fa4-9dd5-bfc7eda513a4"
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v1
+        with:
+          version: 'latest'
+
+      - name: Get AKS credentials
+        run: az aks get-credentials --resource-group k8_modal_rg --name k8_modal_aks
+
+      - name: Deploy to AKS using kubectl
+        run: |
+          kubectl apply -f kubernetes/model/deployment.yaml
+          kubectl apply -f kubernetes/model/service.yaml
+
+      - name: update image in deployment
+        run: |
+          kubectl set image deployment/chai-sutta-modal-deployment chai-sutta-modal-container=modalacr.azurecr.io/chai-sutta-predictor-image:${{ github.event.inputs.model_version }}
+
+      - name: wait for service public IP
+        run: |
+          for i in {1..60}; do
+            IP=$(kubectl get service chai-sutta-modal-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+            if [ -n "$IP" ]; then
+              echo "public IP of model ${{ github.event.inputs.model_version }}: $IP"
+              exit 0
+            fi
+            echo "waiting for public IP..."
+            sleep 10
+          done
+          echo "timed out waiting for public IP" >&2
+          exit 1
