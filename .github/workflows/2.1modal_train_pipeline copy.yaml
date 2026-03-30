@@ -72,8 +72,27 @@ jobs:
       env:
         MODEL_VERSION: v${{ github.run_number }}
         MLFLOW_TRACKING_URI: http://${{ env.MLFLOW_SERVER_IP }}:5000
-        # AZURE_STORAGE_ACCOUNT_NAME: modalstorageacc
-        # AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
+
+    - name: get run id
+      id: get_run_id
+      run: |
+        RUN_ID=$(curl -s http://${{ env.MLFLOW_SERVER_IP }}:5000/api/2.0/mlflow/runs/search -H "Content-Type: application/json" -d '{"filter": "tags.mlflow.runName = \"train_model.py\" and tags.model_version = \"v${{ github.run_number }}\""}' | jq -r '.runs[0].info.run_id')
+        echo "RUN_ID=$RUN_ID" >> $GITHUB_ENV
+        echo "RUN_ID=$RUN_ID"
+
+    - name: Direct modal serve
+      run: |
+        mlflow models serve -m runs:/${{ env.RUN_ID }}/model -p 5001 --no-conda
+
+    - name: Test the served model
+      run: |
+        curl -X POST http://localhost:5001/invocations \
+        -H "Content-Type: application/json" \
+        -d '{
+              "inputs": [[25, 1, 10]]
+            }'
+      
+
 
     - name: artifact Modal upload
       uses: actions/upload-artifact@v4
