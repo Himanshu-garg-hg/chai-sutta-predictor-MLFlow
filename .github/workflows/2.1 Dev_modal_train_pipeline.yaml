@@ -77,7 +77,7 @@ jobs:
     - name: get run id
       id: get_run_id
       run: |
-        RUN_ID=$(curl -s http://${{ env.MLFLOW_SERVER_IP }}:5000/api/2.0/mlflow/runs/search -H "Content-Type: application/json" -d '{"filter": "params.model_version = \"v${{ github.run_number }}\" and run_name = \"model_v${{ github.run_number }}\""}' | jq -r '.runs[0].info.run_id')
+        RUN_ID=$(cat chai-sutta-modal-mlflow/mlflow_run_id.txt)
         echo "RUN_ID=$RUN_ID" >> $GITHUB_ENV
         echo "RUN_ID=$RUN_ID"
 

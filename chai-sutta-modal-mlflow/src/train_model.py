@@ -93,6 +93,9 @@ with mlflow.start_run(run_name=f"model_{model_version}"):
     # Model log (MLflow artifact)
     mlflow.sklearn.log_model(model, "model")
 
+    run_id = mlflow.active_run().info.run_id
+    print(f"[INFO] MLflow run_id: {run_id}")
+
     # ==============================
     # 🔹 SAVE MODEL PACKAGE
     # ==============================
@@ -104,10 +107,15 @@ with mlflow.start_run(run_name=f"model_{model_version}"):
         "gender_encoder": le_gender,
         "habit_encoder": le_habit,
         "version": model_version,
-        "accuracy": accuracy
+        "accuracy": accuracy,
+        "run_id": run_id
     }
 
     with open(model_path, "wb") as f:
         pickle.dump(model_package, f)
 
+    run_id_file = BASE_DIR / "mlflow_run_id.txt"
+    run_id_file.write_text(run_id)
+
     print(f"[SUCCESS] Model saved at: {model_path}")
+    print(f"[INFO] Run ID written to: {run_id_file}")
