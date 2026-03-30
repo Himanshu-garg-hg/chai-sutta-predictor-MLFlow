@@ -84,6 +84,8 @@ jobs:
     - name: Direct modal serve
       run: |
         mlflow models serve -m runs:/${{ env.RUN_ID }}/model -p 5001 --no-conda
+      env:
+        MLFLOW_TRACKING_URI: http://${{ env.MLFLOW_SERVER_IP }}:5000
 
     - name: Test the served model
       run: |
