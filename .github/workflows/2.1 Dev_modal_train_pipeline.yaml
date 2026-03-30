@@ -86,8 +86,11 @@ jobs:
         mlflow models serve -m runs:/${{ env.RUN_ID }}/model -p 5001 --no-conda > /tmp/mlflow_serve.log 2>&1 &
         echo "SERVE_PID=$!" >> $GITHUB_ENV
         echo "Waiting for model server to start..."
-        sleep 10
-        curl --fail http://127.0.0.1:5001/ || true
+        for i in {1..15}; do
+          curl --fail http://127.0.0.1:5001/ping && break
+          echo "Waiting for model server..."
+          sleep 2
+        done
       env:
         MLFLOW_TRACKING_URI: http://${{ env.MLFLOW_SERVER_IP }}:5000
 
