@@ -1,4 +1,4 @@
-name: 2.Modal training pipeline
+name: 2. Prod Modal training pipeline
 
 run-name: Modal training pipeline by ${{ github.actor }} with model version - v${{ github.run_number }}
 

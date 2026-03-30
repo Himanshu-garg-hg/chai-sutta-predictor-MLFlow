@@ -78,6 +78,7 @@ with mlflow.start_run(run_name=f"model_{model_version}"):
 
     mlflow.set_tag("stage", "dev")
     mlflow.set_tag("source", "github_actions")
+    mlflow.set_tag("model_version", model_version)
     
     # ==============================
     # 🔹 MLFLOW LOGGING
