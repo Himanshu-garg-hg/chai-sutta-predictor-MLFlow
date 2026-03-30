@@ -51,9 +51,9 @@ jobs:
 
       - name: create secret to store storage account key
         run: |
-          STORAGE_KEY=$(az storage account keys list --resource-group k8_modal_rg --account-name modalstorageacc --query "[0].value" -o tsv)
-          echo "::add-mask::$STORAGE_KEY"
-          kubectl create secret generic storage-account-secret --from-literal=STORAGE_KEY=$STORAGE_KEY
+          AZURE_STORAGE_KEY=$(az storage account keys list --resource-group k8_modal_rg --account-name modalstorageacc --query "[0].value" -o tsv)
+          echo "::add-mask::$AZURE_STORAGE_KEY"
+          kubectl create secret generic storage-account-secret --from-literal=AZURE_STORAGE_KEY=$AZURE_STORAGE_KEY
 
       - name: Deploy to AKS using kubectl
         run: |

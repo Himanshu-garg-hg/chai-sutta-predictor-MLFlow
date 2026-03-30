@@ -29,7 +29,7 @@ spec:
         - name: AZURE_STORAGE_KEY
           valueFrom:
             secretKeyRef:
-              name: mlflow-secret-1
+              name: storage-account-secret
               key: AZURE_STORAGE_KEY
 
         # env:
