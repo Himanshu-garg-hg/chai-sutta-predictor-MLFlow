@@ -83,17 +83,27 @@ jobs:
 
     - name: Direct modal serve
       run: |
-        mlflow models serve -m runs:/${{ env.RUN_ID }}/model -p 5001 --no-conda
+        mlflow models serve -m runs:/${{ env.RUN_ID }}/model -p 5001 --no-conda > /tmp/mlflow_serve.log 2>&1 &
+        echo "SERVE_PID=$!" >> $GITHUB_ENV
+        echo "Waiting for model server to start..."
+        sleep 10
+        curl --fail http://127.0.0.1:5001/ || true
       env:
         MLFLOW_TRACKING_URI: http://${{ env.MLFLOW_SERVER_IP }}:5000
 
     - name: Test the served model
       run: |
-        curl -X POST http://localhost:5001/invocations \
+        curl --fail -X POST http://127.0.0.1:5001/invocations \
         -H "Content-Type: application/json" \
         -d '{
               "inputs": [[25, 1, 10]]
             }'
+
+    - name: Stop test server
+      if: always()
+      run: |
+        echo "Stopping MLflow serve process $SERVE_PID"
+        kill "$SERVE_PID" || true
       
 
 
