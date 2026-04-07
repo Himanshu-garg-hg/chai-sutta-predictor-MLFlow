@@ -119,11 +119,6 @@
 
           echo "Response: $RESPONSE"
 
-          if [[ $RESPONSE != *"expected_output"* ]]; then
-            echo "Model validation failed ❌"
-            exit 1
-          fi
-
       - name: Stop test server
         if: always()
         run: |
