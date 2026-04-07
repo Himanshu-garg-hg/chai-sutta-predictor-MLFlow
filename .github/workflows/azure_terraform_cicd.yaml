@@ -1,6 +1,6 @@
-name: Terraform Infrastructure
+name: Azure Terraform Infrastructure
 
-run-name: Terraform CI/CD by ${{ github.actor }}-${{ github.ref }}
+run-name: Azure Terraform CI/CD by ${{ github.actor }}-${{ github.ref }}
 
 on:
   push:
@@ -33,21 +33,21 @@ jobs:
 
       - name: Terraform Init
         run: terraform  init 
-        working-directory: ./terraform-k8/root_module
+        working-directory: ./azure-azure-terraform-k8/root_module
 
       - name: Terraform fmt
         run: terraform fmt --recursive 
-        working-directory: ./terraform-k8/root_module 
+        working-directory: ./azure-terraform-k8/root_module 
 
       - name: Terraform validate
         run: terraform validate
-        working-directory: ./terraform-k8/root_module
+        working-directory: ./azure-terraform-k8/root_module
 
       - name: Terraform Plan
         run: terraform plan 
-        working-directory: ./terraform-k8/root_module
+        working-directory: ./azure-terraform-k8/root_module
 
       - name: Terraform Apply
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         run: terraform apply -auto-approve 
-        working-directory: ./terraform-k8/root_module
+        working-directory: ./azure-terraform-k8/root_module

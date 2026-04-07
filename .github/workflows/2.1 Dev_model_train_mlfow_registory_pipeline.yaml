@@ -1,0 +1,170 @@
+  name: 2.2 Dev/staging Model training pipeline with model store on mlflow registry
+
+
+  run-name: Directly serving Model training pipeline by ${{ github.actor }} with model version - v${{ github.run_number }}
+
+  on:
+    workflow_dispatch:
+      
+  permissions:
+    id-token: write
+
+  jobs:
+    train_modal:
+      runs-on: ubuntu-latest
+      steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: az login using federated credentials
+        uses: azure/login@v1
+        with:
+          client-id: "6863db71-fcbf-4466-8046-997de5b919c3"
+          tenant-id: "9fc5e873-a267-48bf-a6dd-9c332cf29837"
+          subscription-id: "a5e53954-5571-4fa4-9dd5-bfc7eda513a4"
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v1
+        with:
+          version: 'latest'
+
+      - name: Get AKS credentials
+        run: az aks get-credentials --resource-group k8_modal_rg --name k8_modal_aks
+
+      - name: Get MLflow IP
+        id: get_ip
+        run: |
+          for i in {1..60}; do
+            IP=$(kubectl get svc mlflow-server-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+            if [ -n "$IP" ]; then
+              echo "MLFLOW_SERVER_IP=$IP" >> $GITHUB_ENV
+              echo "MLFLOW_SERVER_IP=$IP"
+              exit 0
+            fi
+            echo "waiting for MLflow IP..."
+            sleep 10
+          done
+          echo "MLflow IP not found" >&2
+          exit 1
+
+      - name: Check MLflow health
+        run: |
+          curl --fail http://${{ env.MLFLOW_SERVER_IP }}:5000 || exit 1
+          echo "Using MLflow at http://${{ env.MLFLOW_SERVER_IP }}:5000"
+
+      - name: role assignment to access storage account
+        run: |
+          az role assignment create --assignee "6863db71-fcbf-4466-8046-997de5b919c3" --role "Storage Blob Data Contributor" --scope "/subscriptions/a5e53954-5571-4fa4-9dd5-bfc7eda513a4/resourceGroups/k8_modal_rg/providers/Microsoft.Storage/storageAccounts/modalstorageacc"
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r chai-sutta-modal-mlflow/requirements.txt
+
+      - name: Run training script with MLflow registry log and register
+        run: |
+          echo "Training ML Model with version: v${{ github.run_number }}"
+          python chai-sutta-modal-mlflow/src/train_model_mlfowRegistory.py
+        env:
+          MODEL_VERSION: v${{ github.run_number }}
+          MLFLOW_TRACKING_URI: http://${{ env.MLFLOW_SERVER_IP }}:5000
+
+      - name: Promote model to Staging
+        run: |
+          python <<EOF
+          from mlflow.tracking import MlflowClient
+
+          client = MlflowClient()
+          model_name = "chai-sutta-model"
+
+          latest = client.get_latest_versions(model_name, stages=["None"])
+          version = latest[0].version
+
+          print(f"Promoting version {version} to STAGING")
+
+          client.transition_model_version_stage(
+              name=model_name,
+              version=version,
+              stage="Staging"
+          )
+          EOF
+        env:
+          MLFLOW_TRACKING_URI: http://${{ env.MLFLOW_SERVER_IP }}:5000
+
+      
+
+      - name: Serve model from MLflow Registry (Staging)
+        run: |
+          mlflow models serve -m models:/chai-sutta-model/Staging -p 5001 --no-conda > /tmp/mlflow_serve.log 2>&1 &
+          echo "SERVE_PID=$!" >> $GITHUB_ENV
+
+          echo "Waiting for model server..."
+          for i in {1..15}; do
+            curl --fail http://127.0.0.1:5001/ping && break
+            sleep 2
+          done
+        env:
+          MLFLOW_TRACKING_URI: http://${{ env.MLFLOW_SERVER_IP }}:5000
+
+      - name: Test the served model
+        run: |
+          RESPONSE=$(curl -s -X POST http://127.0.0.1:5001/invocations \
+          -H "Content-Type: application/json" \
+          -d '{"inputs": [[25, 1, 10]]}')
+
+          echo "Response: $RESPONSE"
+
+          if [[ $RESPONSE != *"expected_output"* ]]; then
+            echo "Model validation failed ❌"
+            exit 1
+          fi
+
+      - name: Stop test server
+        if: always()
+        run: |
+          echo "Stopping MLflow serve process $SERVE_PID"
+          kill "$SERVE_PID" || true
+        
+
+      - name: Promote model to Production
+        run: |
+          python <<EOF
+          from mlflow.tracking import MlflowClient
+
+          client = MlflowClient()
+          model_name = "chai-sutta-model"
+
+          latest = client.get_latest_versions(model_name, stages=["Staging"])
+          version = latest[0].version
+
+          print(f"Promoting version {version} to PRODUCTION")
+
+          client.transition_model_version_stage(
+              name=model_name,
+              version=version,
+              stage="Production"
+          )
+          EOF
+        env:
+          MLFLOW_TRACKING_URI: http://${{ env.MLFLOW_SERVER_IP }}:5000
+
+
+      - name: artifact Modal upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: models-${{ github.run_number }}
+          path: chai-sutta-modal-mlflow/models/
+
+      - name: Upload model artifacts
+        run: |
+          az storage blob upload-batch \
+            -d chai-sutta-container/models/v${{ github.run_number }} \
+            --account-name modalstorageacc \
+            -s ./chai-sutta-modal-mlflow/models
+
+    
