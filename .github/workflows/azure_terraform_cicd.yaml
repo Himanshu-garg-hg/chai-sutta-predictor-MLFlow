@@ -33,7 +33,7 @@ jobs:
 
       - name: Terraform Init
         run: terraform  init 
-        working-directory: ./azure-azure-terraform-k8/root_module
+        working-directory: ./azure-terraform-k8/root_module
 
       - name: Terraform fmt
         run: terraform fmt --recursive 
